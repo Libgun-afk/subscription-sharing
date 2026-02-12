@@ -19,7 +19,8 @@ export function Navbar() {
             href="/"
             className="text-xl font-bold text-primary-600 hover:text-primary-700 transition-colors"
           >
-            ShareSub ...
+            ShareSub ..
+          
           </Link>
 
           <div className="flex items-center gap-4">
