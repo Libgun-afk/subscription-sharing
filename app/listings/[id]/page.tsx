@@ -3,13 +3,15 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { apiFetchJson, ApiError } from "@/lib/api-client";
+import { StarRating } from "@/components/star-rating";
 
 type Listing = {
   id: string;
   serviceName: string;
   totalSlots: number;
   availableSlots: number;
-  monthlyPrice: string;
+  monthlyPrice: number | string;
   description: string | null;
   avgRating: number;
   ratingCount: number;
@@ -33,31 +35,48 @@ export default function ListingDetailPage() {
 
   useEffect(() => {
     async function fetchListing() {
-      const res = await fetch(`/api/listings/${id}`);
-      if (res.ok) setListing(await res.json());
-      setLoading(false);
+      try {
+        const data = await apiFetchJson<Listing>(`/listings/${id}`);
+        setListing(data);
+      } catch {
+        // keep null
+      } finally {
+        setLoading(false);
+      }
     }
     fetchListing();
   }, [id]);
 
   useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => r.json())
-      .then((d) => setUser(d.user));
+    let mounted = true;
+    (async () => {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      const { data } = await supabase.auth.getUser();
+      if (!mounted) return;
+      setUser(data.user?.email ? { email: data.user.email } : null);
+    })();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   async function handleJoin() {
     setJoinError("");
     setJoining(true);
     try {
-      const res = await fetch(`/api/listings/${id}/join`, { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) {
-        setJoinError(data.error || "Failed to join");
-        return;
-      }
+      const data = await apiFetchJson<{ listing: Listing }>(`/listings/${id}/join`, {
+        method: "POST",
+        auth: true,
+      });
       setListing(data.listing);
       router.refresh();
+    } catch (e: unknown) {
+      if (e instanceof ApiError && e.status === 401) {
+        router.replace(`/auth/login?redirectTo=${encodeURIComponent(`/listings/${id}`)}`);
+        return;
+      }
+      setJoinError(e instanceof Error ? e.message : "Failed to join");
     } finally {
       setJoining(false);
     }
@@ -68,16 +87,18 @@ export default function ListingDetailPage() {
     if (rating < 1 || rating > 5) return;
     setRatingLoading(true);
     try {
-      const res = await fetch(`/api/listings/${id}/ratings`, {
+      await apiFetchJson(`/listings/${id}/ratings`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        auth: true,
         body: JSON.stringify({ score: rating, comment: comment || undefined }),
       });
-      if (res.ok) {
-        const updated = await fetch(`/api/listings/${id}`);
-        if (updated.ok) setListing(await updated.json());
-        setRating(0);
-        setComment("");
+      const updated = await apiFetchJson<Listing>(`/listings/${id}`);
+      setListing(updated);
+      setRating(0);
+      setComment("");
+    } catch (e: unknown) {
+      if (e instanceof ApiError && e.status === 401) {
+        router.replace(`/auth/login?redirectTo=${encodeURIComponent(`/listings/${id}`)}`);
       }
     } finally {
       setRatingLoading(false);
@@ -87,7 +108,7 @@ export default function ListingDetailPage() {
   if (loading || !listing) {
     return (
       <div className="py-12 px-4 flex justify-center">
-        <div className="animate-pulse text-slate-500">Loading...</div>
+        <div className="animate-pulse text-slate-500 dark:text-slate-400">Loading...</div>
       </div>
     );
   }
@@ -106,22 +127,22 @@ export default function ListingDetailPage() {
         ← Back to listings
       </Link>
 
-      <div className="bg-white border border-slate-200 rounded-xl p-6 mb-8">
+      <div className="rounded-2xl border border-slate-200 bg-gradient-to-b from-white/80 to-white/50 p-6 mb-8 shadow-sm shadow-black/5 backdrop-blur dark:border-slate-800 dark:from-slate-950/40 dark:to-slate-950/20">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 mb-2">
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100 mb-2">
               {listing.serviceName}
             </h1>
-            <div className="flex items-center gap-4 text-slate-600 mb-2">
-              <span className="text-3xl font-bold text-primary-600">
+            <div className="flex items-center gap-4 text-slate-600 dark:text-slate-300 mb-2">
+              <span className="text-3xl font-semibold text-primary-600">
                 ${Number(listing.monthlyPrice).toFixed(2)}
               </span>
-              <span>/month total</span>
+              <span className="text-sm">/month total</span>
             </div>
-            <p className="text-slate-600 text-sm">
+            <p className="text-slate-600 dark:text-slate-300 text-sm">
               {listing.availableSlots} of {listing.totalSlots} slots available
             </p>
-            <p className="text-slate-500 text-sm mt-1">
+            <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
               by {listing.owner.email}
             </p>
           </div>
@@ -129,7 +150,7 @@ export default function ListingDetailPage() {
             <button
               onClick={handleJoin}
               disabled={joining}
-              className="bg-primary-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors"
+              className="inline-flex h-12 items-center justify-center rounded-2xl bg-primary-600 px-6 text-sm font-semibold text-white shadow-sm shadow-primary-600/20 transition-all duration-200 hover:bg-primary-700 hover:shadow-md disabled:opacity-50"
             >
               {joining ? "Joining..." : "Join"}
             </button>
@@ -144,24 +165,25 @@ export default function ListingDetailPage() {
           <p className="mt-4 text-slate-600">{listing.description}</p>
         )}
 
-        {listing.ratingCount > 0 && (
-          <div className="mt-4 flex items-center gap-2">
-            <span className="text-amber-500">★</span>
-            <span className="font-medium">{listing.avgRating.toFixed(1)}</span>
-            <span className="text-slate-500 text-sm">
-              ({listing.ratingCount} reviews)
+        <div className="mt-5 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <StarRating value={listing.avgRating} readOnly ariaLabel="Average rating" />
+            <span className="text-sm text-slate-600 dark:text-slate-300">
+              {listing.ratingCount > 0
+                ? `${listing.avgRating.toFixed(1)} (${listing.ratingCount})`
+                : "No reviews yet"}
             </span>
           </div>
-        )}
+        </div>
       </div>
 
       {listing.members.length > 0 && (
-        <div className="bg-white border border-slate-200 rounded-xl p-6 mb-8">
-          <h2 className="font-semibold text-slate-900 mb-4">Members</h2>
+        <div className="rounded-2xl border border-slate-200 bg-gradient-to-b from-white/80 to-white/50 p-6 mb-8 shadow-sm shadow-black/5 backdrop-blur dark:border-slate-800 dark:from-slate-950/40 dark:to-slate-950/20">
+          <h2 className="font-semibold text-slate-900 dark:text-slate-100 mb-4">Members</h2>
           <ul className="space-y-2">
-            <li className="text-slate-600">{listing.owner.email} (owner)</li>
+            <li className="text-slate-600 dark:text-slate-300">{listing.owner.email} (owner)</li>
             {listing.members.map((m) => (
-              <li key={m.user.email} className="text-slate-600">
+              <li key={m.user.email} className="text-slate-600 dark:text-slate-300">
                 {m.user.email}
               </li>
             ))}
@@ -170,45 +192,30 @@ export default function ListingDetailPage() {
       )}
 
       {canRate && (
-        <div className="bg-white border border-slate-200 rounded-xl p-6 mb-8">
-          <h2 className="font-semibold text-slate-900 mb-4">Rate this listing</h2>
+        <div className="rounded-2xl border border-slate-200 bg-gradient-to-b from-white/80 to-white/50 p-6 mb-8 shadow-sm shadow-black/5 backdrop-blur dark:border-slate-800 dark:from-slate-950/40 dark:to-slate-950/20">
+          <h2 className="font-semibold text-slate-900 dark:text-slate-100 mb-4">Rate this listing</h2>
           <form onSubmit={handleRate} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Score (1-5)
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                Rating
               </label>
-              <div className="flex gap-2">
-                {[1, 2, 3, 4, 5].map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setRating(s)}
-                    className={`w-10 h-10 rounded-lg font-medium transition-colors ${
-                      rating >= s
-                        ? "bg-amber-400 text-amber-900"
-                        : "bg-slate-100 text-slate-400 hover:bg-slate-200"
-                    }`}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
+              <StarRating value={rating} onChange={setRating} ariaLabel="Select rating" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                 Comment (optional)
               </label>
               <textarea
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 rows={2}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                className="w-full rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-slate-900 shadow-sm shadow-black/5 backdrop-blur transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-[rgb(var(--background))] dark:border-slate-800 dark:bg-slate-950/30 dark:text-slate-100"
               />
             </div>
             <button
               type="submit"
               disabled={ratingLoading || rating < 1}
-              className="bg-primary-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50"
+              className="inline-flex h-12 items-center justify-center rounded-2xl bg-primary-600 px-6 text-sm font-semibold text-white shadow-sm shadow-primary-600/20 transition-all duration-200 hover:bg-primary-700 hover:shadow-md disabled:opacity-50"
             >
               Submit rating
             </button>
@@ -217,17 +224,20 @@ export default function ListingDetailPage() {
       )}
 
       {listing.ratings.length > 0 && (
-        <div className="bg-white border border-slate-200 rounded-xl p-6">
-          <h2 className="font-semibold text-slate-900 mb-4">Reviews</h2>
+        <div className="rounded-2xl border border-slate-200 bg-gradient-to-b from-white/80 to-white/50 p-6 shadow-sm shadow-black/5 backdrop-blur dark:border-slate-800 dark:from-slate-950/40 dark:to-slate-950/20">
+          <h2 className="font-semibold text-slate-900 dark:text-slate-100 mb-4">Reviews</h2>
           <ul className="space-y-4">
             {listing.ratings.map((r) => (
-              <li key={r.user.email} className="border-b border-slate-100 pb-4 last:border-0">
+              <li
+                key={r.user.email}
+                className="border-b border-slate-100 pb-4 last:border-0 dark:border-slate-900/60"
+              >
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-amber-500">★ {r.score}</span>
-                  <span className="text-slate-500 text-sm">{r.user.email}</span>
+                  <span className="text-slate-500 dark:text-slate-400 text-sm">{r.user.email}</span>
                 </div>
                 {r.comment && (
-                  <p className="text-slate-600 text-sm">{r.comment}</p>
+                  <p className="text-slate-600 dark:text-slate-300 text-sm">{r.comment}</p>
                 )}
               </li>
             ))}

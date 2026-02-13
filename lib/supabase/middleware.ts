@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { DEMO_COOKIE_NAME, isDemoEnabled } from "@/lib/demo-mode";
 
 const PROTECTED_ROUTES = ["/dashboard", "/listings/create"];
 const AUTH_ROUTES = ["/auth/login", "/auth/signup"];
@@ -18,6 +19,8 @@ function isAuthRoute(pathname: string) {
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
+
+  const isDemo = isDemoEnabled() && request.cookies.get(DEMO_COOKIE_NAME)?.value === "1";
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -42,13 +45,13 @@ export async function updateSession(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  if (isProtectedRoute(pathname) && !user) {
+  if (isProtectedRoute(pathname) && !user && !isDemo) {
     const redirectUrl = new URL("/auth/login", request.url);
     redirectUrl.searchParams.set("redirectTo", pathname);
     return NextResponse.redirect(redirectUrl);
   }
 
-  if (isAuthRoute(pathname) && user) {
+  if (isAuthRoute(pathname) && (user || isDemo)) {
     const redirectTo = request.nextUrl.searchParams.get("redirectTo") ?? "/dashboard";
     return NextResponse.redirect(new URL(redirectTo, request.url));
   }

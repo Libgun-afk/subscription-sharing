@@ -1,6 +1,6 @@
-# ShareSub - Subscription Cost-Sharing Marketplace
+# ShareSub - Subscription Cost-Sharing Marketplace (Frontend)
 
-A fullstack MVP for sharing subscription costs (Netflix, Spotify, etc.) with others. Built with Next.js 14, TypeScript, Tailwind CSS, Supabase Auth, and Prisma ORM.
+A frontend app for sharing subscription costs (Netflix, Spotify, etc.) with others. Built with Next.js 14, TypeScript, Tailwind CSS, and Supabase Auth.
 
 ## Features
 
@@ -17,8 +17,7 @@ A fullstack MVP for sharing subscription costs (Netflix, Spotify, etc.) with oth
 - **Language:** TypeScript
 - **Styling:** Tailwind CSS
 - **Auth:** Supabase Auth
-- **Database:** PostgreSQL (Supabase)
-- **ORM:** Prisma
+- **Backend API:** separate service (set `NEXT_PUBLIC_API_BASE_URL`)
 
 ## Folder Structure
 
@@ -28,16 +27,6 @@ subscription-marketplace/
 │   ├── api/
 │   │   ├── auth/
 │   │   │   ├── callback/route.ts
-│   │   │   └── me/route.ts
-│   │   ├── listings/
-│   │   │   ├── [id]/
-│   │   │   │   ├── join/route.ts
-│   │   │   │   ├── ratings/route.ts
-│   │   │   │   └── route.ts
-│   │   │   └── route.ts
-│   │   ├── services/route.ts
-│   │   └── user/
-│   │       └── listings/route.ts
 │   ├── auth/
 │   │   ├── error/page.tsx
 │   │   ├── login/page.tsx
@@ -55,51 +44,19 @@ subscription-marketplace/
 │   ├── navbar.tsx
 │   └── providers.tsx
 ├── lib/
-│   ├── auth.ts
-│   ├── prisma.ts
+│   ├── api-client.ts
+│   ├── i18n.ts
 │   └── supabase/
 │       ├── client.ts
 │       ├── middleware.ts
 │       └── server.ts
-├── prisma/
-│   └── schema.prisma
 ├── middleware.ts
 └── ...
 ```
 
-## Database Schema
+## Backend
 
-```
-User
-├── id (cuid)
-├── supabaseId (unique, links to Supabase Auth)
-├── email
-└── timestamps
-
-Listing
-├── id (cuid)
-├── serviceName
-├── totalSlots
-├── availableSlots
-├── monthlyPrice
-├── description (optional)
-├── ownerId → User
-└── timestamps
-
-SubscriptionMember
-├── id (cuid)
-├── listingId → Listing
-├── userId → User
-└── joinedAt
-
-Rating
-├── id (cuid)
-├── listingId → Listing
-├── userId → User
-├── score (1-5)
-├── comment (optional)
-└── createdAt
-```
+This repository is now **frontend-only**. Marketplace data comes from a separate backend service.
 
 ## Setup Instructions
 
@@ -126,7 +83,7 @@ yarn install
 4. Go to **Project Settings** → **API** and copy:
    - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
    - anon/public key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-5. Go to **Project Settings** → **Database** and copy the connection string → `DATABASE_URL`
+5. (Optional) If your separate backend uses Supabase Postgres, you may need the database connection string there.
 
 ### 4. Environment Variables
 
@@ -141,15 +98,7 @@ Edit `.env`:
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
-DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres
-```
-
-### 5. Database Setup
-
-```bash
-yarn db:generate
-yarn db:push
-# or: npx prisma generate && npx prisma db push
+NEXT_PUBLIC_API_BASE_URL=https://your-backend.example.com
 ```
 
 ### 6. Supabase Auth URL Configuration
@@ -176,28 +125,10 @@ Open [http://localhost:3000](http://localhost:3000).
 
 | Method | Route | Description |
 |--------|-------|-------------|
-| GET | `/api/listings` | List all listings (query: `?service=Netflix`) |
-| POST | `/api/listings` | Create listing (auth required) |
-| GET | `/api/listings/[id]` | Get single listing |
-| POST | `/api/listings/[id]/join` | Join subscription (auth required) |
-| GET | `/api/listings/[id]/ratings` | Get ratings |
-| POST | `/api/listings/[id]/ratings` | Submit/update rating (auth, member/owner only) |
-| GET | `/api/services` | List distinct service names |
-| GET | `/api/auth/me` | Get current user |
-| GET | `/api/user/listings` | Get user's owned & joined listings (auth required) |
+| GET | `/api/auth/callback` | Supabase auth callback (session exchange) |
 
 ## Scripts
 
 - `yarn dev` - Start dev server
 - `yarn build` - Production build
 - `yarn start` - Start production server
-- `yarn db:generate` - Generate Prisma client
-- `yarn db:push` - Push schema to DB (no migrations)
-- `yarn db:migrate` - Run migrations
-
-## Production Notes
-
-- Use `prisma migrate dev` for migrations in production
-- Set `NEXT_PUBLIC_SITE_URL` for correct redirects
-- Configure Supabase redirect URLs for your domain
-- Consider rate limiting and input validation

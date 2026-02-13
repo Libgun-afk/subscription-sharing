@@ -21,9 +21,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.className} antialiased min-h-screen bg-slate-50`}>
+      <body
+        className={`${inter.className} antialiased min-h-screen text-[rgb(var(--foreground))]`}
+      >
         <Providers>
-          <div className="flex flex-col min-h-screen">
+          <div className="flex flex-col min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50 dark:from-slate-950 dark:via-slate-950 dark:to-slate-950">
             <Navbar />
             <main className="flex-1">{children}</main>
           </div>

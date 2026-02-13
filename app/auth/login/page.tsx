@@ -4,8 +4,15 @@ import { useState, Suspense } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { useI18n } from "@/components/i18n-provider";
+import { isDemoEnabled, setDemoUserEmail } from "@/lib/demo-mode";
+
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
 
 function LoginForm() {
+  const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -17,11 +24,37 @@ function LoginForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setError(t("auth.error.emailRequired"));
+      return;
+    }
+    if (!isValidEmail(trimmedEmail)) {
+      setError(t("auth.error.emailInvalid"));
+      return;
+    }
+    if (!password) {
+      setError(t("auth.error.passwordRequired"));
+      return;
+    }
+
+    // Demo mode: allow "login" without a real backend connection.
+    if (isDemoEnabled()) {
+      setDemoUserEmail(trimmedEmail);
+      router.push(redirectTo);
+      router.refresh();
+      return;
+    }
+
     setLoading(true);
 
     try {
       const supabase = createClient();
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await supabase.auth.signInWithPassword({
+        email: trimmedEmail,
+        password,
+      });
 
       if (error) {
         setError(error.message);
@@ -31,7 +64,7 @@ function LoginForm() {
       router.push(redirectTo);
       router.refresh();
     } catch {
-      setError("Something went wrong");
+      setError(t("auth.error.generic"));
     } finally {
       setLoading(false);
     }
@@ -41,13 +74,16 @@ function LoginForm() {
     <>
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="p-3 rounded-lg bg-red-50 text-red-700 text-sm">
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
             {error}
           </div>
         )}
         <div>
-          <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1">
-            Email
+          <label
+            htmlFor="email"
+            className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2"
+          >
+            {t("auth.email")}
           </label>
           <input
             id="email"
@@ -55,13 +91,18 @@ function LoginForm() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-            placeholder="you@example.com"
+            autoComplete="email"
+            inputMode="email"
+            className="h-12 w-full rounded-2xl border border-slate-200 bg-white/70 px-4 text-slate-900 shadow-sm shadow-black/5 backdrop-blur transition-all duration-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-[rgb(var(--background))] dark:border-slate-800 dark:bg-slate-950/30 dark:text-slate-100 dark:placeholder:text-slate-500"
+            placeholder={t("auth.emailPlaceholder")}
           />
         </div>
         <div>
-          <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-1">
-            Password
+          <label
+            htmlFor="password"
+            className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2"
+          >
+            {t("auth.password")}
           </label>
           <input
             id="password"
@@ -69,35 +110,62 @@ function LoginForm() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            autoComplete="current-password"
+            className="h-12 w-full rounded-2xl border border-slate-200 bg-white/70 px-4 text-slate-900 shadow-sm shadow-black/5 backdrop-blur transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-[rgb(var(--background))] dark:border-slate-800 dark:bg-slate-950/30 dark:text-slate-100"
           />
         </div>
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-primary-600 text-white py-2 rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors"
+          className="inline-flex h-12 w-full items-center justify-center rounded-2xl bg-primary-600 px-6 text-sm font-semibold text-white shadow-sm shadow-primary-600/20 transition-all duration-200 hover:bg-primary-700 hover:shadow-md disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-[rgb(var(--background))]"
         >
-          {loading ? "Signing in..." : "Sign In"}
+          {loading ? t("auth.signingIn") : t("auth.signIn")}
         </button>
       </form>
-      <p className="mt-4 text-center text-slate-600 text-sm">
-        Don&apos;t have an account?{" "}
-        <Link href="/auth/signup" className="text-primary-600 hover:underline font-medium">
-          Sign up
+
+      <div className="mt-6 text-center text-sm text-slate-600 dark:text-slate-300">
+        {t("auth.link.noAccount")}{" "}
+        <Link
+          href={`/auth/signup?redirectTo=${encodeURIComponent(redirectTo)}`}
+          className="font-semibold text-primary-700 hover:underline dark:text-primary-300"
+        >
+          {t("auth.link.toSignup")}
         </Link>
-      </p>
+      </div>
     </>
   );
 }
 
 export default function LoginPage() {
+  const { t } = useI18n();
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        <h1 className="text-2xl font-bold text-slate-900 mb-6">Sign In</h1>
-        <Suspense fallback={<div className="animate-pulse text-slate-500">Loading...</div>}>
-          <LoginForm />
-        </Suspense>
+    <div className="relative min-h-[calc(100vh-4rem)] px-4 py-12 flex items-center justify-center">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 -top-24 h-72 bg-gradient-to-r from-primary-500/15 via-sky-500/10 to-fuchsia-500/10 blur-3xl dark:from-primary-400/10 dark:via-sky-400/5 dark:to-fuchsia-400/5"
+      />
+
+      <div className="relative w-full max-w-md">
+        <div className="rounded-2xl border border-slate-200 bg-gradient-to-b from-white/80 to-white/50 p-8 shadow-sm shadow-black/5 backdrop-blur dark:border-slate-800 dark:from-slate-950/40 dark:to-slate-950/20">
+          <div className="mb-6">
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+              {t("auth.login.title")}
+            </h1>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+              {t("auth.login.subtitle")}
+            </p>
+          </div>
+
+          <Suspense
+            fallback={
+              <div className="animate-pulse text-sm text-slate-500 dark:text-slate-400">
+                {t("auth.loading")}
+              </div>
+            }
+          >
+            <LoginForm />
+          </Suspense>
+        </div>
       </div>
     </div>
   );
